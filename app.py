@@ -22,6 +22,7 @@ from main.evaluation.motionctrl_inference import (DEFAULT_NEGATIVE_PROMPT,
                                                   load_model_checkpoint,
                                                   post_prompt)
 from utils.utils import instantiate_from_config
+import time
 
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 SPACE_ID = os.environ.get('SPACE_ID', '')
@@ -43,8 +44,8 @@ If MotionCtrl is helpful, please help to ⭐ the <a href='https://github.com/Ten
 
 ---
 
-📝 **Citation**
-<br>
+📝 **Citation**'
+<br>'
 If our work is useful for your research, please consider citing:
 ```bibtex
 @inproceedings{wang2023motionctrl,
@@ -312,15 +313,18 @@ def model_run(prompts, infer_mode, seed, n_samples):
     global traj_list
     global camera_dict
 
+    start_time = time.time() 
+
     RT = process_camera(camera_dict).reshape(-1,12)
     traj_flow = process_traj(traj_list).transpose(3,0,1,2)
     print(prompts)
-    print(RT.shape)
-    print(traj_flow.shape)
-
+    print(f"{RT.shape=}")
+    print(f"{traj_flow.shape=}")
+        
     noise_shape = [1, 4, 16, 32, 32]
     unconditional_guidance_scale = 7.5
     unconditional_guidance_scale_temporal = None
+
     # n_samples = 1
     ddim_steps= 50
     ddim_eta=1.0
@@ -333,18 +337,20 @@ def model_run(prompts, infer_mode, seed, n_samples):
 
     seed_everything(seed)
 
-    if infer_mode == MODE[0]:
+    if infer_mode == MODE[0]: # camera motion control
         camera_poses = RT
         camera_poses = torch.tensor(camera_poses).float()
         camera_poses = camera_poses.unsqueeze(0)
         trajs = None
         if torch.cuda.is_available():
             camera_poses = camera_poses.cuda()
-    elif infer_mode == MODE[1]:
+
+    elif infer_mode == MODE[1]: # object motion control
         trajs = traj_flow
         trajs = torch.tensor(trajs).float()
         trajs = trajs.unsqueeze(0)
         camera_poses = None
+
         if torch.cuda.is_available():
             trajs = trajs.cuda()
     else:
@@ -354,10 +360,10 @@ def model_run(prompts, infer_mode, seed, n_samples):
         trajs = torch.tensor(trajs).float()
         camera_poses = camera_poses.unsqueeze(0)
         trajs = trajs.unsqueeze(0)
+        
         if torch.cuda.is_available():
             camera_poses = camera_poses.cuda()
             trajs = trajs.cuda()
-
 
     ddim_sampler = DDIMSampler(model)
     batch_size = noise_shape[0]
@@ -394,6 +400,7 @@ def model_run(prompts, infer_mode, seed, n_samples):
     batch_variants = []
     for _ in range(n_samples):
         if ddim_sampler is not None:
+            start_gen_time = time.time()
             samples, _ = ddim_sampler.sample(S=ddim_steps,
                                             conditioning=cond,
                                             batch_size=noise_shape[0],
@@ -407,17 +414,21 @@ def model_run(prompts, infer_mode, seed, n_samples):
                                             features_adapter=traj_features,
                                             pose_emb=RT,
                                             cond_T=cond_T
-                                            )        
+                                            )
+            print(f"Elapsed time for generation: {time.time()-start_gen_time} seconds")       
         ## reconstruct from latent to pixel space
         batch_images = model.decode_first_stage(samples)
         batch_variants.append(batch_images)
     ## variants, batch, c, t, h, w
     batch_variants = torch.stack(batch_variants, dim=1)
     batch_variants = batch_variants[0]
-    
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Elapsed time overall for model_run: {elapsed_time} seconds")
+
     # file_path = save_results(batch_variants, "MotionCtrl", "gradio_temp", fps=10)
     file_path = save_results(batch_variants, fps=10)
-    print(file_path)
 
     return gr.update(value=file_path, width=256*n_samples, height=256)
 
