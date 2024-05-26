@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from glob import glob
 from torchvision.transforms import CenterCrop, Compose, Resize
+import time
 
 from gradio_utils.camera_utils import CAMERA_MOTION_MODE, process_camera, create_relative
 
@@ -509,8 +510,13 @@ def process_input_image(input_image, resize_mode):
 
 def model_run(input_image, fps_id, seed, n_samples, camera_args):
     global model, device, camera_dict, num_frames, num_steps, width, height
+    start_time_process_camera = time.time()
     RT = process_camera(camera_dict, camera_args, num_frames=num_frames, width=width, height=height).reshape(-1,12)
-
+    start_time_produce_video = time.time()
+    print(f"Process camera time: {start_time_produce_video -start_time_process_camera:.2f}s")
+    print(f"input_image size: {input_image.size}")
+    print(f"num_frames: {num_frames}")
+    num_frames = 28
     video_path = motionctrl_sample(
         model=model,
         image=input_image,
@@ -522,6 +528,7 @@ def model_run(input_image, fps_id, seed, n_samples, camera_args):
         sample_num=n_samples,
         device=device
     )
+    print(f"Produce video time: {time.time() - start_time_produce_video:.2f}s")
 
     return video_path
 
